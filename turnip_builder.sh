@@ -16,7 +16,7 @@ workdir="$(pwd)/turnip_workdir"
 ndkver="android-ndk-r29"
 ndk="$workdir/$ndkver/toolchains/llvm/prebuilt/linux-x86_64/bin"
 sdkver="34"
-mesasrc="https://github.com/DiskDVD/A8XX-Y"
+mesasrc="https://github.com/DiskDVD/MesaA8XX"
 srcfolder="A8XX"
 driver_name="A8XX-Y"
 
