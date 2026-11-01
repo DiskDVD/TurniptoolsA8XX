@@ -38,8 +38,7 @@ This is just an attempt (possibly unsuccessful 🙂)
 
 | GPU | Status |
 |-----|--------|
-| Adreno 810 | supported |
-| Adreno 812 | supported |
+| Adreno 810 / 812 | supported |
 | Adreno 830 | supported |
 | Adreno 840 | supported |
 | Adreno 829 / 825 | supported |
@@ -71,7 +70,7 @@ Most often the culprit is:
 
 ---
 
-## 📝 If something isn't working
+##  If something isn't working
 
 Please attach a log:
 
@@ -85,7 +84,7 @@ Without a log, it's impossible to determine the cause.
 
 ---
 
-## 📌 Note
+## Note
 
 This project is created by an enthusiast and is not affiliated with Mesa, Qualcomm, or Winlator.  
 Do not file bug reports in official Mesa repositories — this is an unofficial build.
@@ -93,7 +92,7 @@ Do not file bug reports in official Mesa repositories — this is an unofficial 
 ---
 
 **source code location:**
-https://github.com/DiskDVD/A8XX-Y
+https://github.com/DiskDVD/MesaA8XX
 
 ---
 
