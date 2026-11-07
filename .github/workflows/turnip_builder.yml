@@ -1,60 +1,60 @@
-name: Build "turnip"
-
-on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to build (example: 0.6)'
-        required: true
-        type: string
-
-jobs:
-  start_building_turnip:
-    runs-on: ubuntu-24.04
-    env:
-      BUILD_VERSION: ${{ inputs.version }}
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Prepare environment
-      run: |
-        # Включаем deb-src (может понадобиться скрипту)
-        sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources || true
-        sudo apt update
-
-        # Системные зависимости Mesa / Turnip
-        # ВАЖНО: НЕ ставим meson из apt — там версия 1.5.1, а проект требует >= 1.7.0
-        sudo apt install -y \
-          build-essential flex bison glslang-tools \
-          python3-pip python3-venv python3-mako python3-numpy python3-setuptools \
           libdrm-dev libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev \
           libxrandr-dev libxext-dev libwayland-dev libegl-dev libgles-dev \
-          pkg-config git
+          pkg-config git patchelf unzip zip curl ccache
 
-        # Изолированное окружение с правильной версией Meson
+        # Install a known Meson version and Ninja in an isolated venv.
         python3 -m venv /opt/meson-venv
-        /opt/meson-venv/bin/pip install --upgrade pip
-        /opt/meson-venv/bin/pip install "meson==1.7.0" ninja
+        /opt/meson-venv/bin/python -m pip install --upgrade pip
+        /opt/meson-venv/bin/python -m pip install --no-cache-dir "meson==1.7.0" ninja mako
 
-        # Делаем venv первым в PATH для всех последующих шагов
-        echo "/opt/meson-venv/bin" >> $GITHUB_PATH
+        # Put venv first in PATH for all following GitHub Actions steps.
+        echo "/opt/meson-venv/bin" >> "$GITHUB_PATH"
+        echo "PATH=/opt/meson-venv/bin:$PATH" >> "$GITHUB_ENV"
 
-        # Проверка версий (должно быть 1.7.0)
-        /opt/meson-venv/bin/meson --version
-        /opt/meson-venv/bin/ninja --version
+        # Also override the runner's common system command locations.
+        sudo ln -sfn /opt/meson-venv/bin/meson /usr/local/bin/meson
+        sudo ln -sfn /opt/meson-venv/bin/ninja /usr/local/bin/ninja
+        sudo ln -sfn /opt/meson-venv/bin/meson /usr/bin/meson
+        sudo ln -sfn /opt/meson-venv/bin/ninja /usr/bin/ninja
+
+        echo "Meson path: $(command -v meson)"
+        test "$(meson --version)" = "1.7.0"
+        echo "Meson version: $(meson --version)"
+        echo "Ninja path: $(command -v ninja)"
+        ninja --version
         glslangValidator --version | head -n1
+        ccache --version | head -n1
 
     - name: Verify toolchain
+      shell: bash
       run: |
-        echo "which meson: $(which meson)"
-        echo "meson version: $(meson --version)"
-        echo "which ninja: $(which ninja)"
-        echo "ninja version: $(ninja --version)"
+        set -Eeuo pipefail
+        export PATH="/opt/meson-venv/bin:$PATH"
+        hash -r
+
+        echo "PATH=$PATH"
+        type -a meson
+        type -a ninja
+        test "$(command -v meson)" = "/opt/meson-venv/bin/meson"
+        test "$(meson --version)" = "1.7.0"
+        test "$(command -v ninja)" = "/opt/meson-venv/bin/ninja"
+        meson --version
+        ninja --version
 
     - name: Execute build script
-      run: bash ./turnip_builder.sh
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        export PATH="/opt/meson-venv/bin:$PATH"
+        hash -r
+
+        echo "Meson actually used by build script: $(command -v meson)"
+        meson --version
+        test "$(meson --version)" = "1.7.0"
+
+        # Stop immediately if Meson configuration fails; do not run Ninja
+        # against a missing build.ninja file.
+        bash -Eeuo pipefail ./turnip_builder.sh
 
     - name: List files (debug)
       run: |
