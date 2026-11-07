@@ -89,12 +89,11 @@ jobs:
 
           🖥 Supported GPU
           • Full work Adreno 8xx
-          • Adreno 810/829 have exclusive patches
-          If you play RDR 2 on A810/829 please use: TU_DEBUG = nolrz
+          • Adreno 850  expiremental 
           • Adreno 840 work.
           • Adreno 830 work, recommended use sysmem, but you can try autotuner.
           • Adreno 829/825 Full working, tested (Gmem/Sysmem)
-          • Adreno 810 Full working, tested (Gmem/Sysmem)
+          • Adreno 810/812 Full working, tested (Gmem/Sysmem)
 
           Changes:
 
