@@ -1,237 +1,140 @@
-#!/bin/bash -e
+name: Build "turnip"
 
-# ============================================
-# Название: A8XX-Y Build Script
-# Автор: whitebelyash / DVD
-# Описание: Сборка Vulkan драйвера Turnip для A8XX
-# ============================================
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (example: 0.6)'
+        required: true
+        type: string
 
-#Define variables
-green='\033[0;32m'
-red='\033[0;31m'
-yellow='\033[1;33m'
-nocolor='\033[0m'
-deps="git meson ninja patchelf unzip curl pip flex bison zip glslang glslangValidator"
-workdir="$(pwd)/turnip_workdir"
-ndkver="android-ndk-r29"
-ndk="$workdir/$ndkver/toolchains/llvm/prebuilt/linux-x86_64/bin"
-sdkver="34"
-mesasrc="https://github.com/DiskDVD/MesaA8XX"
-srcfolder="A8XX"
-driver_name="A8XX-Y"
+jobs:
+  start_building_turnip:
+    runs-on: ubuntu-24.04
+    env:
+      BUILD_VERSION: ${{ inputs.version }}
 
-# Проверка наличия BUILD_VERSION
-if [ -z "$BUILD_VERSION" ]; then
-    echo -e "${red}Ошибка: переменная BUILD_VERSION не установлена!${nocolor}"
-    echo "Пример: export BUILD_VERSION=1.0.0"
-    exit 1
-fi
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
 
-clear
+    - name: Prepare environment
+      run: |
+        # deb-src (может понадобиться скрипту)
+        sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources || true
+        sudo apt update
 
-show_banner(){
-    echo -e "${green}╔══════════════════════════════════════════════════════════╗${nocolor}"
-    echo -e "${green}║         A8XX-Y Vulkan Driver Builder v${BUILD_VERSION}          ║${nocolor}"
-    echo -e "${green}╚══════════════════════════════════════════════════════════╝${nocolor}"
-    echo ""
-}
+        # ВАЖНО: НЕ ставим meson из apt (там 1.5.1, проект требует >= 1.7.0).
+        # Ставим всё остальное, включая ccache (скрипт использует его в cross-файле).
+        sudo apt install -y \
+          build-essential flex bison glslang-tools \
+          python3-pip python3-venv python3-mako python3-numpy python3-setuptools \
+          libdrm-dev libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev \
+          libxrandr-dev libxext-dev libwayland-dev libegl-dev libgles-dev \
+          pkg-config git patchelf unzip zip curl ccache
 
-run_all(){
-    show_banner
-    echo -e "${yellow}====== Начало сборки ${driver_name} v${BUILD_VERSION}! ======${nocolor}"
-    echo "Текущая директория: $(pwd)"
-    echo ""
-    check_deps
-    prepare_workdir
-    build_lib_for_android A8XX
-}
+        # Изолированное окружение с Meson 1.7.0 + ninja
+        python3 -m venv /opt/meson-venv
+        /opt/meson-venv/bin/pip install --upgrade pip
+        /opt/meson-venv/bin/pip install "meson==1.7.0" ninja
 
-check_deps(){
-    echo -e "${yellow}Проверка системных зависимостей...${nocolor}"
-    deps_missing=0
-    
-    for deps_chk in $deps; do
-        sleep 0.15
-        if command -v "$deps_chk" >/dev/null 2>&1 ; then
-            echo -e "$green ✓ $deps_chk найдено $nocolor"
-        else
-            echo -e "$red ✗ $deps_chk не найдено! $nocolor"
-            deps_missing=1
-        fi
-    done
+        # КЛЮЧЕВОЕ: подменяем системные meson/ninja на версии из venv.
+        # /usr/local/bin идёт раньше /usr/bin в PATH, поэтому и sudo, и обычный
+        # вызов найдут 1.7.0. Это критично, т.к. turnip_builder.sh вызывает
+        # meson напрямую (без sudo, но на всякий случай).
+        sudo ln -sf /opt/meson-venv/bin/meson /usr/local/bin/meson
+        sudo ln -sf /opt/meson-venv/bin/ninja /usr/local/bin/ninja
 
-    if [ "$deps_missing" == "1" ]; then
-        echo -e "${red}Пожалуйста, установите недостающие зависимости${nocolor}"
-        echo "Для Ubuntu/Debian: sudo apt install git meson ninja-build patchelf unzip curl python3-pip flex bison zip glslang-tools"
-        exit 1
-    fi
+        # Отключаем защиту PEP 668 для pip (скрипт делает `pip install mako`)
+        sudo mkdir -p /etc/pip
+        printf '[global]\nbreak-system-packages = true\n' | sudo tee /etc/pip.conf > /dev/null
 
-    echo -e "${green}Установка Python зависимости Mako...${nocolor}"
-    pip install mako &> /dev/null || echo -e "${yellow}Предупреждение: не удалось установить mako через pip${nocolor}"
-    echo ""
-}
+        hash -r
+        which meson
+        meson --version   # ожидаем 1.7.0
+        ninja --version
+        glslangValidator --version | head -n1
+        ccache --version | head -n1
 
-prepare_workdir(){
-    echo -e "${yellow}Подготовка рабочей директории...${nocolor}"
-    mkdir -p "$workdir" && cd "$_"
+    - name: Verify toolchain
+      run: |
+        echo "which meson: $(which meson)"
+        echo "meson version: $(meson --version)"
+        echo "which ninja: $(which ninja)"
+        echo "ninja version: $(ninja --version)"
+        echo "which ccache: $(which ccache)"
+        meson --version | grep -q '^1\.7\.' || (echo "Meson must be 1.7.x!" && exit 1)
 
-    echo -e "${yellow}Загрузка Android NDK...${nocolor}"
-    if [ ! -f "$ndkver-linux.zip" ]; then
-        curl -# https://dl.google.com/android/repository/"$ndkver"-linux.zip --output "$ndkver"-linux.zip
-    else
-        echo -e "${green}NDK уже загружен${nocolor}"
-    fi
-    
-    echo -e "${yellow}Распаковка Android NDK...${nocolor}"
-    if [ ! -d "$ndkver" ]; then
-        unzip -q "$ndkver"-linux.zip
-    else
-        echo -e "${green}NDK уже распакован${nocolor}"
-    fi
+    - name: Execute build script
+      run: bash ./turnip_builder.sh
 
-    echo -e "${yellow}Загрузка исходников Mesa...${nocolor}"
-    if [ ! -d "$srcfolder" ]; then
-        git clone $mesasrc --depth=1 --no-single-branch $srcfolder
-    else
-        echo -e "${green}Исходники уже загружены${nocolor}"
-        cd $srcfolder
-        git fetch --all
-        cd ..
-    fi
-    cd $srcfolder
-    
-    echo -e "${green}Установка версии драйвера...${nocolor}"
-    echo "#define TUGEN8_DRV_VERSION \"v$BUILD_VERSION\"" > ./src/freedreno/vulkan/tu_version.h
-    echo ""
-}
+    - name: List files (debug)
+      run: |
+        echo "Files in /tmp:"
+        ls -la /tmp/*.zip 2>/dev/null || echo "No zip files found in /tmp"
+        echo ""
+        echo "Files in workdir:"
+        ls -la turnip_workdir/*.zip 2>/dev/null || echo "No zip files found in turnip_workdir"
 
-build_lib_for_android(){
-    echo -e "${yellow}==== Сборка Mesa на ветке $1 ====${nocolor}"
-    git checkout --force origin/$1
-    
-    # Проверяем, что мы на правильной ветке
-    current_branch=$(git branch --show-current)
-    echo -e "${green}Текущая ветка: $current_branch${nocolor}"
-    
-    # Настройка путей для компиляции
-    mkdir -p "$workdir/bin"
-    ln -sf "$ndk/clang" "$workdir/bin/cc" 2>/dev/null || true
-    ln -sf "$ndk/clang++" "$workdir/bin/c++" 2>/dev/null || true
-    export PATH="$workdir/bin:$ndk:$PATH"
-    export CC=clang
-    export CXX=clang++
-    export AR=llvm-ar
-    export RANLIB=llvm-ranlib
-    export STRIP=llvm-strip
-    export OBJDUMP=llvm-objdump
-    export OBJCOPY=llvm-objcopy
-    export LDFLAGS="-fuse-ld=lld"
+    - name: Upload artifact (debug)
+      uses: actions/upload-artifact@v4
+      with:
+        name: turnip-driver
+        path: |
+          /tmp/A8XX-Y*.zip
+          /tmp/*.zip
+          turnip_workdir/A8XX-Y*.zip
+        if-no-files-found: warn
+        retention-days: 7
 
-    echo -e "${yellow}Генерация файлов сборки...${nocolor}"
-    cat <<EOF >"android-aarch64.txt"
-[binaries]
-ar = '$ndk/llvm-ar'
-c = ['ccache', '$ndk/aarch64-linux-android$sdkver-clang']
-cpp = ['ccache', '$ndk/aarch64-linux-android$sdkver-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '--start-no-unused-arguments', '-static-libstdc++', '--end-no-unused-arguments']
-c_ld = '$ndk/ld.lld'
-cpp_ld = '$ndk/ld.lld'
-strip = '$ndk/llvm-strip'
-pkg-config = ['env', 'PKG_CONFIG_LIBDIR=$ndk/pkg-config', '/usr/bin/pkg-config']
+    - name: Release "turnip"
+      if: success()
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: tu_A8XX-Y${{ inputs.version }}
+        name: A8XX-Y${{ inputs.version }}
+        body: |
+          Turnip TU8 — Fork of Mesa Repository with Adreno 8XX Patches
 
-[host_machine]
-system = 'android'
-cpu_family = 'aarch64'
-cpu = 'armv8'
-endian = 'little'
-EOF
+          This release is a custom fork of the original work by whitebelyashx, extended with additional patches and optimizations specifically targeted at Adreno 810/829.
+          The build is still in beta testing, and stability may vary depending on the device.
+          Please do not report any issues to Mesa, as this is an unofficial fork.
 
-    cat <<EOF >"native.txt"
-[build_machine]
-c = ['ccache', 'clang']
-cpp = ['ccache', 'clang++']
-ar = 'llvm-ar'
-strip = 'llvm-strip'
-c_ld = 'ld.lld'
-cpp_ld = 'ld.lld'
-system = 'linux'
-cpu_family = 'x86_64'
-cpu = 'x86_64'
-endian = 'little'
-EOF
+          💿 Interlayer:
+          1) proton-10arm64ec or proton-11arm64ec
+          2) Rendering mode: DXVK 2.4.1 or then gradually increase until the last / VKD3D 2.14 or VKD3D 3.0b
+          3) Memory type: Autotuner, or sysmem
+          4) Permission: Depends on the game
 
-    # Очищаем старую сборку, если есть
-    rm -rf build-android-aarch64
+          🖥 Supported GPU
+          • Full work Adreno 8xx
+          • Adreno 850 expiremental
+          • Adreno 840 work.
+          • Adreno 830 work, recommended use sysmem, but you can try autotuner.
+          • Adreno 829/825 Full working, tested (Gmem/Sysmem)
+          • Adreno 810/812 Full working, tested (Gmem/Sysmem)
 
-    echo -e "${yellow}Настройка Meson...${nocolor}"
-    meson setup build-android-aarch64 \
-        --cross-file "android-aarch64.txt" \
-        --native-file "native.txt" \
-        --prefix /tmp/turnip-$1 \
-        -Dbuildtype=release \
-        -Dstrip=true \
-        -Dplatforms=android \
-        -Dvideo-codecs= \
-        -Dplatform-sdk-version="$sdkver" \
-        -Dandroid-stub=true \
-        -Dgallium-drivers= \
-        -Dvulkan-drivers=freedreno \
-        -Dvulkan-beta=true \
-        -Dfreedreno-kmds=kgsl \
-        -Degl=disabled \
-        -Dplatform-sdk-version=36 \
-        -Dandroid-libbacktrace=disabled
+          Changes:
 
-    echo -e "${yellow}Компиляция...${nocolor}"
-    ninja -C build-android-aarch64 install
+          I would like to express my gratitude to the TG group:
 
-    if [ ! -f /tmp/turnip-$1/lib/libvulkan_freedreno.so ]; then
-        echo -e "${red}❌ Сборка не удалась!${nocolor}"
-        exit 1
-    fi
-    
-    echo -e "${green}✅ Сборка успешно завершена!${nocolor}"
-    
-    echo -e "${yellow}Создание ZIP архива...${nocolor}"
-    cd /tmp/turnip-$1/lib
-    
-    cat <<EOF >"meta.json"
-{
-  "schemaVersion": 1,
-  "name": "${driver_name} v${BUILD_VERSION}",
-  "description": "A8XX Vulkan Driver для Android",
-  "author": "whitebelyash / DVD",
-  "packageVersion": "1",
-  "vendor": "Mesa",
-  "driverVersion": "Vulkan 1.4.335",
-  "minApi": 28,
-  "libraryName": "libvulkan_freedreno.so"
-}
-EOF
+          https://t.me/hardwareunion
 
-    ZIP_NAME="/tmp/${driver_name}-v${BUILD_VERSION}.zip"
-    zip -q "$ZIP_NAME" libvulkan_freedreno.so meta.json
-    
-    echo -e "${green}✅ Архив создан: $ZIP_NAME${nocolor}"
-    ls -lh "$ZIP_NAME"
-    
-    # Копируем архив в рабочую директорию
-    cp "$ZIP_NAME" "$workdir/"
-    echo -e "${green}✅ Архив скопирован в: $workdir/${driver_name}-v${BUILD_VERSION}.zip${nocolor}"
-    
-    cd -
-    
-    if [ ! -f "$ZIP_NAME" ]; then
-        echo -e "${red}❌ Не удалось создать архив!${nocolor}"
-        exit 1
-    fi
-    
-    echo ""
-    echo -e "${green}╔══════════════════════════════════════════════════════════╗${nocolor}"
-    echo -e "${green}║              СБОРКА УСПЕШНО ЗАВЕРШЕНА!                  ║${nocolor}"
-    echo -e "${green}╚══════════════════════════════════════════════════════════╝${nocolor}"
-    echo -e "${yellow}Файл драйвера:${nocolor} $ZIP_NAME"
-    echo -e "${yellow}Размер:${nocolor} $(du -h "$ZIP_NAME" | cut -f1)"
-    echo ""
-}
+          And also special thanks to:
+          Whitebeliash (Main developer) Thank you so much! You are clearly the best!
+          DerixSpace (developer)
+          Lebron (Project organizer)
+          Whitedevil2427 P.C. We are waiting for you! (Main tester A829)
+          Ikol5v (Main tester A829)
+          Michael (Chief Assistant to the organizer)
+          And to the driver community
 
-run_all
+          #If you encounter any banking or banking problems, please write to me:
+          Telegram: @DISK_DVD
+          Or find me in the Discord community: EmuCore
+
+        files: |
+          /tmp/A8XX-Y*.zip
+          /tmp/*.zip
+          turnip_workdir/A8XX-Y*.zip
+        fail_on_unmatched_files: false
