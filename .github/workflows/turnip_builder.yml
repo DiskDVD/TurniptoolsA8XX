@@ -20,32 +20,38 @@ jobs:
 
     - name: Prepare environment
       run: |
-        # Включаем deb-src (нужно для apt-get source / build-dep)
+        # Включаем deb-src (может понадобиться скрипту)
         sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources || true
-
-        # Основные репозитории
         sudo apt update
 
-        # Сборочные зависимости Mesa / Turnip
+        # Системные зависимости Mesa / Turnip
+        # ВАЖНО: НЕ ставим meson из apt — там версия 1.5.1, а проект требует >= 1.7.0
         sudo apt install -y \
-          build-essential \
-          flex bison \
-          glslang-tools \
-          python3-pip python3-mako python3-numpy python3-setuptools \
+          build-essential flex bison glslang-tools \
+          python3-pip python3-venv python3-mako python3-numpy python3-setuptools \
           libdrm-dev libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev \
-          libxrandr-dev libxext-dev libwayland-dev \
-          libegl-dev libgles-dev \
-          pkg-config \
-          git
+          libxrandr-dev libxext-dev libwayland-dev libegl-dev libgles-dev \
+          pkg-config git
 
-        # Meson ставим через pip — версия из репозитория Ubuntu 24.04 (1.3.x) слишком старая
-        # и не понимает синтаксис meson.build в свежих ветках Mesa.
-        sudo pip3 install --break-system-packages "meson==1.7.0" ninja
+        # Изолированное окружение с правильной версией Meson
+        python3 -m venv /opt/meson-venv
+        /opt/meson-venv/bin/pip install --upgrade pip
+        /opt/meson-venv/bin/pip install "meson==1.7.0" ninja
 
-        # Проверка версий
-        meson --version
-        ninja --version
+        # Делаем venv первым в PATH для всех последующих шагов
+        echo "/opt/meson-venv/bin" >> $GITHUB_PATH
+
+        # Проверка версий (должно быть 1.7.0)
+        /opt/meson-venv/bin/meson --version
+        /opt/meson-venv/bin/ninja --version
         glslangValidator --version | head -n1
+
+    - name: Verify toolchain
+      run: |
+        echo "which meson: $(which meson)"
+        echo "meson version: $(meson --version)"
+        echo "which ninja: $(which ninja)"
+        echo "ninja version: $(ninja --version)"
 
     - name: Execute build script
       run: bash ./turnip_builder.sh
@@ -89,11 +95,12 @@ jobs:
 
           🖥 Supported GPU
           • Full work Adreno 8xx
-          • Adreno 850  expiremental 
+          • Adreno 810/829 have exclusive patches
+          If you play RDR 2 on A810/829 please use: TU_DEBUG = nolrz
           • Adreno 840 work.
           • Adreno 830 work, recommended use sysmem, but you can try autotuner.
           • Adreno 829/825 Full working, tested (Gmem/Sysmem)
-          • Adreno 810/812 Full working, tested (Gmem/Sysmem)
+          • Adreno 810 Full working, tested (Gmem/Sysmem)
 
           Changes:
 
