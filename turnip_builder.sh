@@ -1,4 +1,11 @@
+cat << 'EOF' > turnip_builder.sh
 #!/bin/bash -e
+
+# ============================================
+# Название: A8XX-Y Build Script
+# Автор: whitebelyash / DVD
+# Описание: Сборка Vulkan драйвера Turnip для A8XX
+# ============================================
 
 #Define variables
 green='\033[0;32m'
@@ -10,7 +17,7 @@ workdir="$(pwd)/turnip_workdir"
 ndkver="android-ndk-r29"
 ndk="$workdir/$ndkver/toolchains/llvm/prebuilt/linux-x86_64/bin"
 sdkver="34"
-mesasrc="https://github.com/DiskDVD/MesaA8XX"
+mesasrc="https://github.com"
 srcfolder="A8XX"
 driver_name="A8XX-Y"
 
@@ -71,7 +78,7 @@ prepare_workdir(){
 
     echo -e "${yellow}Загрузка Android NDK...${nocolor}"
     if [ ! -f "$ndkver-linux.zip" ]; then
-        curl -# https://dl.google.com/android/repository/"$ndkver"-linux.zip --output "$ndkver"-linux.zip
+        curl -# https://google.com"$ndkver"-linux.zip --output "$ndkver"-linux.zip
     else
         echo -e "${green}NDK уже загружен${nocolor}"
     fi
@@ -230,3 +237,4 @@ EOF
 
 # Запуск основного процесса
 run_all
+EOF
