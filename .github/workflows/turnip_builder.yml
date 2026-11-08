@@ -1,62 +1,39 @@
-          libdrm-dev libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev \
-          libxrandr-dev libxext-dev libwayland-dev libegl-dev libgles-dev \
-          pkg-config git patchelf unzip zip curl ccache
+name: Build "turnip"
 
-        # Install a known Meson version and Ninja in an isolated venv.
-        python3 -m venv /opt/meson-venv
-        /opt/meson-venv/bin/python -m pip install --upgrade pip
-        /opt/meson-venv/bin/python -m pip install --no-cache-dir "meson==1.7.0" ninja mako
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (example: 0.6)'
+        required: true
+        type: string
 
-        # Put venv first in PATH for all following GitHub Actions steps.
-        echo "/opt/meson-venv/bin" >> "$GITHUB_PATH"
-        echo "PATH=/opt/meson-venv/bin:$PATH" >> "$GITHUB_ENV"
+jobs:
+  start_building_turnip:
+    runs-on: ubuntu-24.04
+    env:
+      BUILD_VERSION: ${{ inputs.version }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-        # Also override the runner's common system command locations.
-        sudo ln -sfn /opt/meson-venv/bin/meson /usr/local/bin/meson
-        sudo ln -sfn /opt/meson-venv/bin/ninja /usr/local/bin/ninja
-        sudo ln -sfn /opt/meson-venv/bin/meson /usr/bin/meson
-        sudo ln -sfn /opt/meson-venv/bin/ninja /usr/bin/ninja
+    steps:
+    - uses: actions/checkout@v4
 
-        echo "Meson path: $(command -v meson)"
-        test "$(meson --version)" = "1.7.0"
-        echo "Meson version: $(meson --version)"
-        echo "Ninja path: $(command -v ninja)"
-        ninja --version
-        glslangValidator --version | head -n1
-        ccache --version | head -n1
-
-    - name: Verify toolchain
-      shell: bash
+    - name: Prepare environment
       run: |
-        set -Eeuo pipefail
-        export PATH="/opt/meson-venv/bin:$PATH"
-        hash -r
-
-        echo "PATH=$PATH"
-        type -a meson
-        type -a ninja
-        test "$(command -v meson)" = "/opt/meson-venv/bin/meson"
-        test "$(meson --version)" = "1.7.0"
-        test "$(command -v ninja)" = "/opt/meson-venv/bin/ninja"
-        meson --version
-        ninja --version
+        # Включение deb-src ресурсов
+        sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+        
+        # Обновление кэша и установка базовых системных зависимостей
+        sudo apt update
+        sudo apt install -y build-essential flex bison glslang-tools python3-pip python3-setuptools ninja-build
+        
+        # Установка Meson версии 1.7.x
+        sudo pip3 install "meson>=1.7,<1.8" --break-system-packages
 
     - name: Execute build script
-      shell: bash
-      run: |
-        set -Eeuo pipefail
-        export PATH="/opt/meson-venv/bin:$PATH"
-        hash -r
+      run: bash ./turnip_builder.sh
 
-        echo "Meson actually used by build script: $(command -v meson)"
-        meson --version
-        test "$(meson --version)" = "1.7.0"
-
-        # Stop immediately if Meson configuration fails; do not run Ninja
-        # against a missing build.ninja file.
-        bash -Eeuo pipefail ./turnip_builder.sh
-
-    - name: List files (debug)
+    - name: List files in /tmp (debug)
       run: |
         echo "Files in /tmp:"
         ls -la /tmp/*.zip 2>/dev/null || echo "No zip files found in /tmp"
@@ -72,16 +49,14 @@
           /tmp/A8XX-Y*.zip
           turnip_workdir/A8XX-Y*.zip
         if-no-files-found: warn
-        retention-days: 7
 
     - name: Release "turnip"
-      if: success()
       uses: softprops/action-gh-release@v2
       with:
         tag_name: tu_A8XX-Y${{ inputs.version }}
         name: A8XX-Y${{ inputs.version }}
         body: |
-          Turnip TU8 — Fork of Mesa Repository with Adreno 8XX Patches
+          Turnip TU8 — Fork of Mesa's Repository with Adreno 8XX Patches
 
           This release is a custom fork of the original work by whitebelyashx, extended with additional patches and optimizations specifically targeted at Adreno 810/829.
           The build is still in beta testing, and stability may vary depending on the device.
@@ -95,12 +70,11 @@
 
           🖥 Supported GPU
           • Full work Adreno 8xx
-          • Adreno 810/829 have exclusive patches
-          If you play RDR 2 on A810/829 please use: TU_DEBUG = nolrz
+          • Adreno 850 experimental support 
           • Adreno 840 work.
           • Adreno 830 work, recommended use sysmem, but you can try autotuner.
           • Adreno 829/825 Full working, tested (Gmem/Sysmem)
-          • Adreno 810 Full working, tested (Gmem/Sysmem)
+          • Adreno 810/812 Full working, tested (Gmem/Sysmem)
 
           Changes:
 
@@ -125,3 +99,4 @@
           /tmp/A8XX-Y*.zip
           turnip_workdir/A8XX-Y*.zip
         fail_on_unmatched_files: false
+        
