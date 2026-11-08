@@ -8,6 +8,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+
 jobs:
   start_building_turnip:
     runs-on: ubuntu-24.04
@@ -20,35 +23,34 @@ jobs:
 
     - name: Prepare environment
       run: |
-        # Включение deb-src ресурсов
         sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
-        
-        # Обновление кэша и установка базовых системных зависимостей
         sudo apt update
-        sudo apt install -y build-essential flex bison glslang-tools python3-pip python3-setuptools ninja-build
-        
-        # Установка Meson версии 1.7.x
+        sudo apt install -y build-essential flex bison glslang-tools \
+          python3-pip python3-setuptools python3-mako ninja-build \
+          git patchelf unzip curl zip ccache clang lld pkg-config
+        sudo apt build-dep -y mesa
         sudo pip3 install "meson>=1.7,<1.8" --break-system-packages
+
+    - name: Check script
+      run: |
+        head -3 turnip_builder.sh
+        wc -l turnip_builder.sh
+        bash -n turnip_builder.sh
 
     - name: Execute build script
       run: bash ./turnip_builder.sh
 
-    - name: List files in /tmp (debug)
+    - name: List files (debug)
       run: |
-        echo "Files in /tmp:"
-        ls -la /tmp/*.zip 2>/dev/null || echo "No zip files found in /tmp"
-        echo ""
-        echo "Files in workdir:"
-        ls -la turnip_workdir/*.zip 2>/dev/null || echo "No zip files found in turnip_workdir"
+        ls -la /tmp/A8XX-Y*.zip || echo "No zip in /tmp"
+        ls -la turnip_workdir/*.zip || echo "No zip in workdir"
 
-    - name: Upload artifact (debug)
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: turnip-driver
-        path: |
-          /tmp/A8XX-Y*.zip
-          turnip_workdir/A8XX-Y*.zip
-        if-no-files-found: warn
+        path: turnip_workdir/A8XX-Y*.zip
+        if-no-files-found: error
 
     - name: Release "turnip"
       uses: softprops/action-gh-release@v2
@@ -70,7 +72,7 @@ jobs:
 
           🖥 Supported GPU
           • Full work Adreno 8xx
-          • Adreno 850 experimental support 
+          • Adreno 850 experimental support
           • Adreno 840 work.
           • Adreno 830 work, recommended use sysmem, but you can try autotuner.
           • Adreno 829/825 Full working, tested (Gmem/Sysmem)
@@ -79,7 +81,6 @@ jobs:
           Changes:
 
           I would like to express my gratitude to the TG group:
-
           https://t.me/hardwareunion
 
           And also special thanks to:
@@ -91,12 +92,8 @@ jobs:
           Michael (Chief Assistant to the organizer)
           And to the driver community
 
-          #If you encounter any banking or banking problems, please write to me:
+          If you encounter any bugs or problems, please write to me:
           Telegram: @DISK_DVD
           Or find me in the Discord community: EmuCore
-
-        files: |
-          /tmp/A8XX-Y*.zip
-          turnip_workdir/A8XX-Y*.zip
-        fail_on_unmatched_files: false
-        
+        files: turnip_workdir/A8XX-Y*.zip
+        fail_on_unmatched_files: true
