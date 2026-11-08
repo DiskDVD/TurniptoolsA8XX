@@ -41,9 +41,7 @@ jobs:
       run: bash ./turnip_builder.sh
 
     - name: List files (debug)
-      run: |
-        ls -la /tmp/A8XX-Y*.zip || echo "No zip in /tmp"
-        ls -la turnip_workdir/*.zip || echo "No zip in workdir"
+      run: ls -la turnip_workdir/*.zip
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -72,7 +70,7 @@ jobs:
 
           🖥 Supported GPU
           • Full work Adreno 8xx
-          • Adreno 850 experimental support
+          • Adreno 850 experimental support 
           • Adreno 840 work.
           • Adreno 830 work, recommended use sysmem, but you can try autotuner.
           • Adreno 829/825 Full working, tested (Gmem/Sysmem)
@@ -81,6 +79,7 @@ jobs:
           Changes:
 
           I would like to express my gratitude to the TG group:
+
           https://t.me/hardwareunion
 
           And also special thanks to:
@@ -92,8 +91,10 @@ jobs:
           Michael (Chief Assistant to the organizer)
           And to the driver community
 
-          If you encounter any bugs or problems, please write to me:
+          #If you encounter any banking or banking problems, please write to me:
           Telegram: @DISK_DVD
           Or find me in the Discord community: EmuCore
+
         files: turnip_workdir/A8XX-Y*.zip
         fail_on_unmatched_files: true
+        
