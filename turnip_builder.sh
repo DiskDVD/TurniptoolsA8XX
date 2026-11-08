@@ -6,7 +6,7 @@ yellow='\033[1;33m'
 nocolor='\033[0m'
 
 # ---------- Настройки ----------
-mesasrc="https://github.com/ВАШ_ЮЗЕР/ВАШ_РЕПО.git"   # <-- ПОДСТАВЬ СВОЙ ФОРК MESA
+mesasrc="https://github.com/DiskDVD/MesaA8XX.git"
 branch="A8XX"
 srcfolder="A8XX"
 driver_name="A8XX-Y"
